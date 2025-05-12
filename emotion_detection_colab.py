@@ -15,8 +15,11 @@ import os
 os.chdir('speech-emotion-detection')
 !pwd
 
-# Install dependencies
-!pip install -q numpy pandas scikit-learn matplotlib tensorflow librosa transformers soundfile
+# Install dependencies with specific versions compatible with Colab
+!pip install -q numpy==1.26.4 pandas==2.2.2 scikit-learn==1.2.2 matplotlib==3.7.1 tensorflow==2.15.0 librosa==0.10.1 transformers==4.35.2 soundfile==0.12.1
+
+# Verify installed versions
+!pip list | grep -E "numpy|pandas|scikit-learn|matplotlib|tensorflow|librosa|transformers|soundfile"
 
 # %% [markdown]
 # ## 2. Download and Prepare Dataset
