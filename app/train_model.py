@@ -21,8 +21,20 @@ except ImportError:
     from app.utils.speech_to_text_simple import SimpleSpeechToText as SpeechToText
     print("Using simplified speech-to-text (mock transcriptions)")
 
-from app.utils.text_analyzer import TextAnalyzer
-from app.utils.emotion_classifier import EmotionClassifier
+# Try to use extended analyzers and classifiers
+try:
+    from app.utils.text_analyzer_extended import TextAnalyzerExtended as TextAnalyzer
+    from app.utils.emotion_classifier_extended import EmotionClassifierExtended as EmotionClassifier
+    print("Using extended text analyzer and emotion classifier with sarcasm detection")
+    has_sarcasm_detection = True
+except ImportError:
+    from app.utils.text_analyzer import TextAnalyzer
+    from app.utils.emotion_classifier import EmotionClassifier
+    print("Using basic text analyzer and emotion classifier")
+    has_sarcasm_detection = False
+
+# Import the multimodal analyzer for training validation
+from app.utils.multimodal_analyzer import MultimodalAnalyzer
 
 def main():
     print("Initializing emotion detection model training...")
@@ -131,13 +143,66 @@ def main():
     audio_processor = AudioProcessor()
     speech_to_text = SpeechToText()
     text_analyzer = TextAnalyzer()
-    emotion_classifier = EmotionClassifier()
+    
+    # Determine model type based on availability
+    if has_sarcasm_detection:
+        print("Training with sarcasm detection...")
+        emotion_classifier = EmotionClassifier()
+        output_model_path = os.path.join(data_dir, 'models', 'emotion_classifier_extended.pkl')
+    else:
+        print("Training basic emotion classifier...")
+        emotion_classifier = EmotionClassifier()
+        output_model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
+    
+    # Check for sarcasm dataset
+    sarcasm_samples = None
+    if has_sarcasm_detection:
+        try:
+            print("Checking for sarcasm dataset...")
+            from download_sarcasm_dataset import load_sarcasm_datasets, process_for_training
+            
+            # Check if sarcasm dataset exists, if not download it
+            sarcasm_path = 'data/sarcasm/combined_sarcasm.csv'
+            if not os.path.exists(sarcasm_path):
+                print("Downloading sarcasm dataset...")
+                process_for_training()
+            
+            # Load sarcasm dataset
+            sarcasm_df = pd.read_csv(sarcasm_path)
+            print(f"Loaded sarcasm dataset with {len(sarcasm_df)} samples")
+            
+            # Prepare sarcasm samples (with mock audio features for now)
+            sarcasm_samples = []
+            
+            # Generate simple mock audio features for sarcasm samples
+            print("Preparing sarcasm samples...")
+            for _, row in tqdm(sarcasm_df.iterrows(), total=len(sarcasm_df)):
+                try:
+                    # Use neutral audio features as a base for sarcasm
+                    # This is a simplification - in real situations, sarcasm has specific prosodic features
+                    mock_audio_features = np.zeros(audio_processor.n_features)
+                    
+                    # Extract text features for sarcasm
+                    text = row['text']
+                    text_feat, _ = text_analyzer.extract_features_for_model(text)
+                    
+                    # Store as sarcasm sample
+                    sarcasm_samples.append((mock_audio_features, text_feat, 'sarcastic'))
+                except Exception as e:
+                    print(f"Error processing sarcasm sample: {str(e)}")
+                    
+            print(f"Prepared {len(sarcasm_samples)} sarcasm samples for training")
+            
+        except Exception as e:
+            print(f"Error loading sarcasm dataset: {str(e)}")
+            sarcasm_samples = None
     
     # Extract features from training data
     print("Extracting features from training data...")
     train_audio_features = []
     train_text_features = []
     train_labels = []
+    train_text_dicts = []
     
     for _, row in tqdm(train_df.iterrows(), total=len(train_df)):
         try:
@@ -148,12 +213,13 @@ def main():
             transcription = speech_to_text.transcribe(row['path'])
             
             # Extract text features
-            text_feat, _ = text_analyzer.extract_features_for_model(transcription)
+            text_feat, text_dict = text_analyzer.extract_features_for_model(transcription)
             
             # Store features and label
             train_audio_features.append(audio_feat)
             train_text_features.append(text_feat)
             train_labels.append(row['emotion'])
+            train_text_dicts.append(text_dict)
         except Exception as e:
             print(f"Error processing {row['filename']}: {str(e)}")
     
@@ -167,7 +233,8 @@ def main():
     accuracy = emotion_classifier.train(
         audio_features=train_audio_features,
         text_features=train_text_features,
-        labels=train_labels
+        labels=train_labels,
+        sarcasm_samples=sarcasm_samples
     )
     
     print(f"Training accuracy: {accuracy:.4f}")
@@ -175,10 +242,9 @@ def main():
     # Check if validation set is empty
     if len(val_df) == 0:
         print("WARNING: No validation data available. Skipping validation.")
-        model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        emotion_classifier.save_model(model_path)
-        print(f"Model saved to {model_path}")
+        os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
+        emotion_classifier.save_model(output_model_path)
+        print(f"Model saved to {output_model_path}")
         return
     
     # Evaluate on validation set
@@ -186,6 +252,7 @@ def main():
     val_audio_features = []
     val_text_features = []
     val_labels = []
+    val_text_dicts = []
     
     for _, row in tqdm(val_df.iterrows(), total=len(val_df)):
         try:
@@ -196,45 +263,86 @@ def main():
             transcription = speech_to_text.transcribe(row['path'])
             
             # Extract text features
-            text_feat, _ = text_analyzer.extract_features_for_model(transcription)
+            text_feat, text_dict = text_analyzer.extract_features_for_model(transcription)
             
             # Store features and label
             val_audio_features.append(audio_feat)
             val_text_features.append(text_feat)
             val_labels.append(row['emotion'])
+            val_text_dicts.append(text_dict)
         except Exception as e:
             print(f"Error processing {row['filename']}: {str(e)}")
     
-    # Check if we have enough validation data after processing
-    if len(val_audio_features) == 0:
-        print("WARNING: No valid validation samples could be processed.")
-        model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        emotion_classifier.save_model(model_path)
-        print(f"Model saved to {model_path}")
-        return
-    
-    # Evaluate on validation set
+    # Evaluate model on validation set
+    print("Evaluating model on validation set...")
     val_metrics = emotion_classifier.evaluate(
         audio_features=val_audio_features,
         text_features=val_text_features,
-        true_labels=val_labels
+        true_labels=val_labels,
+        text_dicts=val_text_dicts
     )
     
     print(f"Validation accuracy: {val_metrics['accuracy']:.4f}")
-    print("Per-class metrics:")
     
+    # Print per-class metrics
+    print("\nPer-class validation metrics:")
     for emotion, metrics in val_metrics['per_class_metrics'].items():
         print(f"  {emotion}:")
         print(f"    Precision: {metrics['precision']:.4f}")
         print(f"    Recall: {metrics['recall']:.4f}")
-        print(f"    F1: {metrics['f1']:.4f}")
+        print(f"    F1 Score: {metrics['f1']:.4f}")
+        print(f"    Support: {metrics['support']}")
     
     # Save the model
-    model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    emotion_classifier.save_model(model_path)
-    print(f"Model saved to {model_path}")
+    os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
+    emotion_classifier.save_model(output_model_path)
+    print(f"Model saved to {output_model_path}")
+    
+    # Initialize and test the multimodal analyzer
+    print("Testing multimodal analyzer integration...")
+    multimodal_analyzer = MultimodalAnalyzer(
+        audio_processor=audio_processor,
+        speech_to_text=speech_to_text,
+        text_analyzer=text_analyzer,
+        emotion_classifier=emotion_classifier
+    )
+    
+    # Test on a few samples
+    if len(val_df) > 0:
+        sample_size = min(3, len(val_df))
+        samples = val_df.sample(sample_size)
+        
+        print(f"\nTesting multimodal integration on {sample_size} samples:")
+        for i, (_, row) in enumerate(samples.iterrows()):
+            print(f"\nSample {i+1} - True emotion: {row['emotion']}")
+            try:
+                # Analyze with multimodal analyzer
+                result = multimodal_analyzer.analyze(row['path'])
+                
+                # Display results
+                print(f"Predicted emotion: {result['emotion']}")
+                print(f"Transcription: {result['transcription']}")
+                print(f"Agreement score: {result['agreement_score']:.2f}")
+                print(f"Modality weights: Audio={result['modality_weights']['audio']:.2f}, " +
+                      f"Text={result['modality_weights']['text']:.2f}")
+                
+                # Print confidence scores for top 3 emotions
+                top_emotions = sorted(
+                    result['confidence_scores'].items(), 
+                    key=lambda x: x[1], 
+                    reverse=True
+                )[:3]
+                print("Top confidence scores:")
+                for emotion, score in top_emotions:
+                    print(f"  {emotion}: {score:.4f}")
+                
+            except Exception as e:
+                print(f"Error in multimodal analysis: {str(e)}")
+    
+    # Save multimodal analyzer weights
+    weights_path = os.path.join(data_dir, 'models', 'multimodal_weights.json')
+    multimodal_analyzer.save_weights(weights_path)
+    print(f"Multimodal analyzer weights saved to {weights_path}")
 
 if __name__ == "__main__":
     main() 
