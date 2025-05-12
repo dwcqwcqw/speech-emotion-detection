@@ -1,107 +1,107 @@
-# Google Colab运行指南 - 多模态情感检测系统
+# Google Colab Guide - Multimodal Emotion Detection System
 
-本指南将帮助您在Google Colab中设置和运行多模态情感检测系统。
+This guide will help you set up and run the multimodal emotion detection system in Google Colab.
 
-## 1. 克隆仓库并设置环境
+## 1. Clone the Repository and Set Up the Environment
 
-在Colab中创建一个新的笔记本，然后执行以下代码：
+Create a new notebook in Colab and execute the following code:
 
 ```python
-# 克隆GitHub仓库
+# Clone GitHub repository
 !git clone https://github.com/dwcqwcqw/speech-emotion-detection.git
 %cd speech-emotion-detection
 
-# 安装必要的依赖包
+# Install required dependencies
 !pip install -r requirements.txt
 
-# 安装额外需要的依赖
+# Install additional required dependencies
 !pip install streamlit pydub librosa torch transformers sklearn nltk scikit-learn matplotlib seaborn tqdm
 !pip install imblearn
 
-# 下载NLTK资源
+# Download NLTK resources
 import nltk
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('vader_lexicon')
 ```
 
-## 2. 修复Colab特定的路径问题
+## 2. Fix Colab-Specific Path Issues
 
-由于Colab的运行环境与本地环境不同，需要创建一个Colab特定的配置文件：
+Since Colab's environment differs from a local environment, create a Colab-specific configuration file:
 
 ```python
 %%writefile colab_config.py
 import os
 import sys
 
-# 确保运行时当前目录是项目根目录
+# Ensure the current directory is the project root
 project_root = os.getcwd()
 sys.path.append(project_root)
 
-# 创建必要的目录
+# Create necessary directories
 os.makedirs('data/models', exist_ok=True)
 os.makedirs('data/audio', exist_ok=True)
 os.makedirs('data/evaluation', exist_ok=True)
 os.makedirs('data/sarcasm', exist_ok=True)
 ```
 
-## 3. 数据集准备
+## 3. Prepare Datasets
 
-下载并准备RAVDESS数据集和讽刺数据集：
+Download and prepare the RAVDESS dataset and sarcasm dataset:
 
 ```python
-# 运行数据集下载脚本
+# Run the sarcasm dataset download script
 !python download_sarcasm_dataset.py
 
-# 查看数据集目录结构
+# View the dataset directory structure
 !ls -la data/
 !ls -la data/sarcasm/
 ```
 
-## 4. 训练模型
+## 4. Train the Model
 
-使用以下代码训练情感检测模型：
+Use the following code to train the emotion detection model:
 
 ```python
-# 运行训练脚本
+# Run the training script
 !python app/train_model.py
 ```
 
-## 5. 评估模型
+## 5. Evaluate the Model
 
-训练完成后，评估模型的性能：
+After training, evaluate the model's performance:
 
 ```python
-# 运行评估脚本
+# Run the evaluation script
 !python app/evaluate_model.py
 
-# 查看评估结果
+# View evaluation results
 !ls -la data/evaluation/
 ```
 
-## 6. 在Colab中运行Streamlit应用（可选）
+## 6. Run the Streamlit App in Colab (Optional)
 
-如果您想在Colab中运行Streamlit应用进行演示，可以使用以下方法：
+If you want to run the Streamlit application for demonstration in Colab, you can use the following method:
 
 ```python
-# 安装和配置ngrok（用于暴露本地服务器）
+# Install and configure ngrok (for exposing local servers)
 !pip install pyngrok
 from pyngrok import ngrok
 
-# 启动Streamlit应用
+# Start Streamlit application
 !streamlit run app/app.py &
 
-# 创建公共URL
+# Create a public URL
 public_url = ngrok.connect(port=8501)
-print(f"Streamlit应用可通过以下链接访问: {public_url}")
+print(f"Streamlit application can be accessed at: {public_url}")
 ```
 
-## 7. 使用MultimodalAnalyzer进行自定义推理
+## 7. Custom Inference Using MultimodalAnalyzer
 
-您可以使用以下代码片段在Colab中测试系统的推理能力：
+You can use the following code snippet to test the system's inference capability in Colab:
 
 ```python
-# 导入所需的库
+# Import required libraries
 import sys
 import os
 sys.path.append(os.getcwd())
@@ -112,16 +112,16 @@ from app.utils.text_analyzer_extended import TextAnalyzerExtended
 from app.utils.emotion_classifier_extended import EmotionClassifierExtended
 from app.utils.multimodal_analyzer import MultimodalAnalyzer
 
-# 初始化组件
+# Initialize components
 audio_processor = AudioProcessor()
 speech_to_text = SimpleSpeechToText()
 text_analyzer = TextAnalyzerExtended()
 
-# 加载训练好的模型
+# Load trained model
 model_path = 'data/models/emotion_classifier_extended.pkl'
 emotion_classifier = EmotionClassifierExtended(model_path=model_path)
 
-# 初始化多模态分析器
+# Initialize multimodal analyzer
 multimodal_analyzer = MultimodalAnalyzer(
     audio_processor=audio_processor,
     speech_to_text=speech_to_text,
@@ -130,81 +130,81 @@ multimodal_analyzer = MultimodalAnalyzer(
     weights_path='data/models/multimodal_weights.json' if os.path.exists('data/models/multimodal_weights.json') else None
 )
 
-# 选择一个音频文件进行分析
+# Select an audio file for analysis
 from app.utils.dataset_handler import DatasetHandler
 dataset_handler = DatasetHandler()
 _, _, test_df = dataset_handler.split_dataset()
 
-# 分析第一个测试样本
+# Analyze the first test sample
 if len(test_df) > 0:
     sample = test_df.iloc[0]
-    print(f"分析样本: {sample['filename']} (真实情感: {sample['emotion']})")
+    print(f"Analyzing sample: {sample['filename']} (True emotion: {sample['emotion']})")
     
     result = multimodal_analyzer.analyze(sample['path'])
     
-    print(f"预测情感: {result['emotion']}")
-    print(f"转录文本: {result['transcription']}")
-    print(f"模态一致性得分: {result['agreement_score']:.2f}")
-    print(f"模态权重: 音频={result['modality_weights']['audio']:.2f}, 文本={result['modality_weights']['text']:.2f}")
+    print(f"Predicted emotion: {result['emotion']}")
+    print(f"Transcription: {result['transcription']}")
+    print(f"Modality agreement score: {result['agreement_score']:.2f}")
+    print(f"Modality weights: Audio={result['modality_weights']['audio']:.2f}, Text={result['modality_weights']['text']:.2f}")
     
-    # 打印置信度得分
-    print("\n情感置信度得分:")
+    # Print confidence scores
+    print("\nEmotion confidence scores:")
     for emotion, score in sorted(result['confidence_scores'].items(), key=lambda x: x[1], reverse=True):
         print(f"  {emotion}: {score:.4f}")
 ```
 
-## 故障排除
+## Troubleshooting
 
-如果遇到以下问题，可以尝试相应的解决方案：
+If you encounter the following issues, you can try the corresponding solutions:
 
-### 数据集下载问题
+### Dataset Download Issues
 
-如果RAVDESS数据集下载或提取出现问题，可以手动下载并上传到Colab：
+If there are problems downloading or extracting the RAVDESS dataset, you can manually download and upload it to Colab:
 
 ```python
-# 手动下载RAVDESS数据集
+# Manually download RAVDESS dataset
 !wget -O data/ravdess.zip https://zenodo.org/record/1188976/files/Audio_Speech_Actors_01-24.zip
 
-# 解压数据集
+# Extract the dataset
 !unzip -o data/ravdess.zip -d data/
 !mkdir -p data/audio
 
-# 将所有WAV文件移动到data/audio目录
+# Move all WAV files to the data/audio directory
 !find data/Audio_Speech_Actors_01-24 -name "*.wav" -exec cp {} data/audio/ \;
 ```
 
-### 路径错误
+### Path Errors
 
-如果出现路径相关错误，请确保当前工作目录是项目根目录：
+If you encounter path-related errors, ensure that the current working directory is the project root:
 
 ```python
 import os
-print(f"当前工作目录: {os.getcwd()}")
-# 如果不是项目根目录，请使用以下命令切换
-%cd speech-emotion-detection  # 替换为实际路径
+print(f"Current working directory: {os.getcwd()}")
+# If it's not the project root, use the following command to switch
+%cd speech-emotion-detection  # Replace with the actual path
 ```
 
-### 内存错误
+### Memory Errors
 
-如果遇到内存不足错误，可以尝试以下方法：
+If you encounter out-of-memory errors, you can try the following methods:
 
-1. 在Colab中切换到提供更多RAM的运行时（运行时 > 更改运行时类型 > 选择高RAM）
-2. 减少批处理大小或使用较小的数据子集进行训练：
+1. Switch to a runtime with more RAM in Colab (Runtime > Change runtime type > Select High RAM)
+2. Reduce the batch size or use a smaller data subset for training:
 
 ```python
-# 使用较小的训练集进行测试
-!python app/train_model.py --sample-size 100  # 如果脚本支持此参数
+# Use a smaller training set for testing
+!python app/train_model.py --sample-size 100  # If the script supports this parameter
 ```
 
-### 依赖包冲突
+### Dependency Package Conflicts
 
-如果遇到依赖包冲突问题，可以尝试在隔离环境中安装：
+If you encounter dependency package conflicts, you can try installing in an isolated environment:
 
 ```python
 !pip install -r requirements.txt --no-deps
 ```
 
-然后手动安装关键依赖：
+Then manually install key dependencies:
 
 ```python
 !pip install torch==1.10.0 transformers==4.11.3 librosa==0.8.1
