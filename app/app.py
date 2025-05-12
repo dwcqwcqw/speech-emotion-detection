@@ -12,10 +12,11 @@ import time
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.utils.audio_processor import AudioProcessor
-from app.utils.speech_to_text import SpeechToText
-from app.utils.text_analyzer import TextAnalyzer
-from app.utils.emotion_classifier import EmotionClassifier
+# 修改导入方式，使用相对导入
+from utils.audio_processor import AudioProcessor
+from utils.speech_to_text import SpeechToText
+from utils.text_analyzer import TextAnalyzer
+from utils.emotion_classifier import EmotionClassifier
 
 # Set page configuration
 st.set_page_config(

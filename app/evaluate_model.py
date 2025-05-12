@@ -12,11 +12,12 @@ import json
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.utils.dataset_handler import DatasetHandler
-from app.utils.audio_processor import AudioProcessor
-from app.utils.speech_to_text import SpeechToText
-from app.utils.text_analyzer import TextAnalyzer
-from app.utils.emotion_classifier import EmotionClassifier
+# 修改导入方式，使用相对导入
+from utils.dataset_handler import DatasetHandler
+from utils.audio_processor import AudioProcessor
+from utils.speech_to_text import SpeechToText
+from utils.text_analyzer import TextAnalyzer
+from utils.emotion_classifier import EmotionClassifier
 
 def plot_confusion_matrix(y_true, y_pred, classes, normalize=False, title=None, cmap=plt.cm.Blues):
     """
