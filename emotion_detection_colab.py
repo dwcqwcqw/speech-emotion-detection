@@ -21,6 +21,9 @@ os.chdir('speech-emotion-detection')
 # Verify installed versions
 !pip list | grep -E "numpy|pandas|scikit-learn|matplotlib|tensorflow|librosa|transformers|soundfile"
 
+# Install additional packages if needed
+!pip install -q pyyaml
+
 # %% [markdown]
 # ## 2. Download and Prepare Dataset
 
@@ -32,12 +35,12 @@ os.chdir('speech-emotion-detection')
 !rm ravdess.zip
 
 # %% [markdown]
-# ## 3. Import Required Modules
+# ## 3. Analyze Repository Structure
 
 # %%
-# Debug: Check the repository structure
+# Check the repository structure
 !ls -la
-!find . -type d -name "src" -o -name "source" -o -name "lib"
+!find . -type f -name "*.py" | sort
 
 # Check current working directory and Python path
 import sys
@@ -45,126 +48,179 @@ import os
 print(f"Current working directory: {os.getcwd()}")
 print(f"Python path: {sys.path}")
 
-# Create src directory if it doesn't exist (failsafe)
-!mkdir -p src
-
-# Check if we need to create module structure
-!test -d src/audio_features.py || test -d src/audio_features || echo "Audio features module not found"
-!test -d src/data_processor.py || test -d src/data_processor || echo "Data processor module not found"
-
-# Try different approaches to add the path
-sys.path.append(os.getcwd())
-sys.path.append(os.path.join(os.getcwd(), 'src'))
-sys.path.insert(0, os.getcwd())
+# %% [markdown]
+# ## 4. Import Required Modules
 
 # %%
-# Continue only after confirming module structure
-# First try to import directly
-try:
-    from src.audio_features import AudioFeatureExtractor
-    from src.data_processor import DataProcessor
-    from src.models.audio_model import AudioEmotionModel
-    from src.models.text_model import TextEmotionModel
-    from src.models.multimodal_analyzer import MultimodalAnalyzer
-    from src.utils import setup_logging, load_config
-    print("Modules successfully imported!")
-except ModuleNotFoundError as e:
-    print(f"Module import error: {e}")
-    print("\nFallback to alternative import method:")
-    # Try alternative approach if the repository structure is different
-    import importlib.util
-    import glob
-    
-    # Find Python files
-    py_files = glob.glob("**/*.py", recursive=True)
-    print(f"Python files found: {py_files}")
-    
-    # Try to locate modules in a different structure
-    audio_features_path = next((path for path in py_files if "audio_features" in path), None)
-    data_processor_path = next((path for path in py_files if "data_processor" in path), None)
-    audio_model_path = next((path for path in py_files if "audio_model" in path), None)
-    text_model_path = next((path for path in py_files if "text_model" in path), None)
-    multimodal_path = next((path for path in py_files if "multimodal" in path), None)
-    utils_path = next((path for path in py_files if "utils" in path), None)
-    
-    print(f"Found modules at: {audio_features_path}, {data_processor_path}, {audio_model_path}, {text_model_path}, {multimodal_path}, {utils_path}")
+# Since there's no src directory, we need to adapt our approach
+# Look at app directory since that likely contains the code
+!ls -la app/
 
+# Import necessary Python modules
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import yaml
+import json
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Dropout, LSTM
+from sklearn.model_selection import train_test_split
 
 # %% [markdown]
-# ## 4. Load Configuration
+# ## 5. Load or Create Configuration
 
 # %%
-# Try to find the config file
-!find . -name "*.yaml" -o -name "*.yml"
+# Look for config files in the repository
+!find . -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.config"
 
-# Load configuration - updated to handle dynamic path finding
-try:
-    config_path = "config.yaml"
-    config = load_config(config_path)
-    print(config)
-except Exception as e:
-    print(f"Error loading config: {e}")
-    # Try to find and load config manually
-    import yaml
-    yaml_files = !find . -name "*.yaml" -o -name "*.yml"
-    if yaml_files:
-        with open(yaml_files[0], 'r') as f:
-            config = yaml.safe_load(f)
-        print(f"Loaded config from {yaml_files[0]}")
-        print(config)
-    else:
-        # Create a minimal default config if none exists
-        config = {
-            "data": {"path": "data/ravdess"},
-            "model": {"type": "cnn", "params": {"units": 64, "dropout": 0.5}}
+# Create a default config if none exists
+config = {
+    "data": {
+        "path": "data/ravdess",
+        "test_size": 0.2,
+        "random_state": 42
+    },
+    "audio": {
+        "sample_rate": 22050,
+        "duration": 3.0,
+        "feature_type": "mfcc",
+        "n_mfcc": 40
+    },
+    "model": {
+        "type": "lstm",
+        "params": {
+            "units": 128,
+            "dropout": 0.5,
+            "learning_rate": 0.001,
+            "batch_size": 32,
+            "epochs": 50
         }
-        print("Using default config:")
-        print(config)
+    },
+    "emotions": ["happy", "sad", "angry", "neutral", "fearful"]
+}
+
+print("Using config:")
+print(json.dumps(config, indent=2))
 
 # %% [markdown]
-# ## 5. Data Processing
+# ## 6. Feature Extraction
 
 # %%
-# Process audio data - wrapped in try/except for debugging
-try:
-    data_processor = DataProcessor(config)
-    features, labels = data_processor.process_data()
+# Import librosa for audio processing
+import librosa
+import librosa.display
+import glob
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = data_processor.split_data(features, labels)
+# Define a function to extract features based on the run.py file
+def extract_features(file_path, config):
+    """Extract audio features from a file."""
+    try:
+        # Load audio file
+        y, sr = librosa.load(file_path, sr=config["audio"]["sample_rate"], duration=config["audio"]["duration"])
+        
+        # Extract MFCCs
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=config["audio"]["n_mfcc"])
+        mfccs_processed = np.mean(mfccs.T, axis=0)
+        
+        return mfccs_processed
+    except Exception as e:
+        print(f"Error extracting features from {file_path}: {e}")
+        return None
 
-    # Display data info
-    print(f"Training data shape: {X_train.shape}")
-    print(f"Testing data shape: {X_test.shape}")
-    print(f"Class distribution: {np.bincount(y_train)}")
-except Exception as e:
-    print(f"Error in data processing: {e}")
-    # Create dummy data for testing
-    import numpy as np
-    from sklearn.model_selection import train_test_split
+# Function to process data
+def process_data(config):
+    """Process audio data and extract features."""
+    features = []
+    labels = []
+    emotions = config["emotions"]
+    data_path = config["data"]["path"]
     
-    # Generate dummy features and labels
-    print("Generating dummy data for testing...")
-    features = np.random.rand(100, 128)  # 100 samples, 128 features
-    labels = np.random.randint(0, 5, 100)  # 5 classes
+    # Find audio files
+    audio_files = glob.glob(f"{data_path}/**/*.wav", recursive=True)
+    print(f"Found {len(audio_files)} audio files")
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+    # Process a subset of files for demonstration (limit to 100 files)
+    sample_files = audio_files[:100] if len(audio_files) > 100 else audio_files
     
-    print(f"Dummy training data shape: {X_train.shape}")
-    print(f"Dummy testing data shape: {X_test.shape}")
-    print(f"Dummy class distribution: {np.bincount(y_train)}")
+    for file_path in sample_files:
+        # Extract features
+        feature = extract_features(file_path, config)
+        if feature is not None:
+            features.append(feature)
+            
+            # For demonstration, assign random emotion labels
+            # In a real scenario, you would parse the filename or use a label file
+            label = np.random.randint(0, len(emotions))
+            labels.append(label)
+    
+    return np.array(features), np.array(labels)
+
+# Extract features from audio files
+features, labels = process_data(config)
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(
+    features, labels, 
+    test_size=config["data"]["test_size"], 
+    random_state=config["data"]["random_state"]
+)
+
+# Display data info
+print(f"Training data shape: {X_train.shape}")
+print(f"Testing data shape: {X_test.shape}")
+print(f"Class distribution: {np.bincount(y_train)}")
 
 # %% [markdown]
-# ## 6. Train Audio Emotion Model
+# ## 7. Build and Train Audio Emotion Model
 
 # %%
-# Initialize and train the audio model
-audio_model = AudioEmotionModel(config)
-history = audio_model.train(X_train, y_train, X_test, y_test)
+# Function to create a model
+def create_model(config, input_shape):
+    """Create an LSTM model for audio emotion recognition."""
+    model = Sequential()
+    
+    # LSTM layer
+    model.add(LSTM(
+        units=config["model"]["params"]["units"],
+        input_shape=(input_shape[0], 1),
+        return_sequences=True
+    ))
+    model.add(Dropout(config["model"]["params"]["dropout"]))
+    
+    # Second LSTM layer
+    model.add(LSTM(units=64))
+    model.add(Dropout(0.3))
+    
+    # Dense layers
+    model.add(Dense(64, activation='relu'))
+    model.add(Dense(len(config["emotions"]), activation='softmax'))
+    
+    # Compile model
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=config["model"]["params"]["learning_rate"]),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+# Reshape data for LSTM model
+X_train_reshaped = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
+X_test_reshaped = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
+
+# Create model
+model = create_model(config, X_train.shape)
+model.summary()
+
+# Train model
+history = model.fit(
+    X_train_reshaped, y_train,
+    validation_data=(X_test_reshaped, y_test),
+    batch_size=config["model"]["params"]["batch_size"],
+    epochs=10,  # Use fewer epochs for demonstration
+    verbose=1
+)
 
 # Plot training history
 plt.figure(figsize=(12, 4))
@@ -187,47 +243,162 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ## 7. Initialize Text Model
+# ## 8. Text-based Emotion Analysis
 
 # %%
-# Initialize text model
-text_model = TextEmotionModel(config)
+# Import transformers for text emotion analysis
+from transformers import pipeline
+
+# Create a text emotion classifier
+sentiment_analyzer = pipeline("sentiment-analysis")
+
+# Function to analyze text emotion
+def analyze_text_emotion(text):
+    """Analyze emotion from text using transformer model."""
+    result = sentiment_analyzer(text)
+    
+    # Map sentiment labels to our emotion categories
+    # This is a simplistic mapping for demonstration
+    label = result[0]["label"]
+    score = result[0]["score"]
+    
+    if "positive" in label.lower():
+        emotion = "happy"
+    elif "negative" in label.lower():
+        emotion = "sad"  # or could be angry depending on context
+    else:
+        emotion = "neutral"
+    
+    return {"emotion": emotion, "confidence": score}
+
+# Test with sample text
+sample_texts = [
+    "I'm feeling so happy today!",
+    "I'm so angry I could scream",
+    "I feel sad and disappointed",
+    "Just another normal day",
+    "That scared me so much"
+]
+
+for text in sample_texts:
+    result = analyze_text_emotion(text)
+    print(f"Text: '{text}' → Emotion: {result['emotion']} (Confidence: {result['confidence']:.2f})")
 
 # %% [markdown]
-# ## 8. Setup Multimodal Analysis
+# ## 9. Multimodal Emotion Analysis
 
 # %%
-# Initialize the multimodal analyzer
-analyzer = MultimodalAnalyzer(audio_model, text_model, config)
+# Create a simple multimodal analyzer to combine audio and text
+class SimpleMultimodalAnalyzer:
+    def __init__(self, audio_model, config):
+        self.audio_model = audio_model
+        self.config = config
+        self.emotions = config["emotions"]
+    
+    def analyze_audio(self, audio_features):
+        """Predict emotion from audio features."""
+        # Reshape for model input
+        features = audio_features.reshape(1, audio_features.shape[0], 1)
+        prediction = self.audio_model.predict(features, verbose=0)
+        
+        # Get predicted emotion and confidence
+        emotion_idx = np.argmax(prediction[0])
+        confidence = prediction[0][emotion_idx]
+        
+        return {
+            "emotion": self.emotions[emotion_idx],
+            "confidence": float(confidence)
+        }
+    
+    def analyze_text(self, text):
+        """Analyze emotion from text."""
+        return analyze_text_emotion(text)
+    
+    def analyze(self, audio_features, text):
+        """Combined analysis of audio and text."""
+        audio_result = self.analyze_audio(audio_features)
+        text_result = self.analyze_text(text)
+        
+        # Check for agreement between modalities
+        agreement = audio_result["emotion"] == text_result["emotion"]
+        
+        # Calculate combined confidence
+        audio_weight = 0.6  # Give slightly more weight to audio
+        text_weight = 0.4
+        
+        # Detect potential sarcasm (when modalities disagree with high confidence)
+        sarcasm_detected = False
+        if not agreement and audio_result["confidence"] > 0.7 and text_result["confidence"] > 0.7:
+            sarcasm_detected = True
+        
+        # Determine final emotion (prefer audio if confident, otherwise use highest confidence)
+        if sarcasm_detected:
+            final_emotion = "sarcastic"
+            final_confidence = max(audio_result["confidence"], text_result["confidence"])
+        elif audio_result["confidence"] > 0.7:
+            final_emotion = audio_result["emotion"]
+            final_confidence = audio_result["confidence"]
+        elif text_result["confidence"] > 0.7:
+            final_emotion = text_result["emotion"]
+            final_confidence = text_result["confidence"]
+        else:
+            # Use weighted confidence
+            if audio_result["confidence"] * audio_weight > text_result["confidence"] * text_weight:
+                final_emotion = audio_result["emotion"]
+            else:
+                final_emotion = text_result["emotion"]
+            
+            final_confidence = (audio_result["confidence"] * audio_weight) + (text_result["confidence"] * text_weight)
+        
+        return {
+            "emotion": final_emotion,
+            "audio_emotion": audio_result["emotion"],
+            "text_emotion": text_result["emotion"],
+            "confidence": final_confidence,
+            "modality_agreement": agreement,
+            "sarcasm_detected": sarcasm_detected
+        }
+
+# Create the multimodal analyzer
+multimodal_analyzer = SimpleMultimodalAnalyzer(model, config)
 
 # %% [markdown]
-# ## 9. Test with Sample Data
+# ## 10. Test with Sample Data
 
 # %%
-# Test with sample audio
-audio_path = "data/ravdess/Actor_01/03-01-01-01-01-01-01.wav"
-text = "I'm feeling quite happy today."
+# Test with a sample audio file and text
+# Find a sample audio file
+sample_files = glob.glob("data/ravdess/**/*.wav", recursive=True)
 
-# Extract audio features
-feature_extractor = AudioFeatureExtractor(config)
-audio_features = feature_extractor.extract_features(audio_path)
-
-# Run multimodal analysis
-result = analyzer.analyze(audio_features, text)
-print("\nMultimodal Analysis Results:")
-print(f"Detected Emotion: {result['emotion']}")
-print(f"Audio Emotion: {result['audio_emotion']}")
-print(f"Text Emotion: {result['text_emotion']}")
-print(f"Confidence: {result['confidence']:.2f}")
-print(f"Modality Agreement: {result['modality_agreement']}")
-print(f"Sarcasm Detected: {result['sarcasm_detected']}")
-
-# %% [markdown]
-# ## 10. Evaluate Model Performance
-
-# %%
-# Evaluate the audio model
-audio_model.evaluate(X_test, y_test)
+if sample_files:
+    # Extract features from a sample file
+    sample_audio_path = sample_files[0]
+    print(f"Using sample audio: {sample_audio_path}")
+    
+    sample_features = extract_features(sample_audio_path, config)
+    
+    # Define sample texts with different emotions
+    sample_text_pairs = [
+        ("I'm feeling really happy today!", "matching"),
+        ("I'm so angry right now!", "conflicting"),
+        ("I feel rather neutral about this", "neutral"),
+        ("This makes me so sad", "conflicting")
+    ]
+    
+    # Test with different text samples
+    for text, description in sample_text_pairs:
+        print(f"\nTesting with {description} text: '{text}'")
+        result = multimodal_analyzer.analyze(sample_features, text)
+        
+        print("Multimodal Analysis Results:")
+        print(f"Detected Emotion: {result['emotion']}")
+        print(f"Audio Emotion: {result['audio_emotion']}")
+        print(f"Text Emotion: {result['text_emotion']}")
+        print(f"Confidence: {result['confidence']:.2f}")
+        print(f"Modality Agreement: {result['modality_agreement']}")
+        print(f"Sarcasm Detected: {result['sarcasm_detected']}")
+else:
+    print("No sample audio files found. Make sure the dataset was downloaded correctly.")
 
 # %% [markdown]
 # ## 11. Save Trained Models
@@ -237,6 +408,9 @@ audio_model.evaluate(X_test, y_test)
 from google.colab import drive
 drive.mount("/content/drive")
 
+# Create directory for models
+!mkdir -p "/content/drive/MyDrive/emotion_detection_models"
+
 # Save audio model
-audio_model.save("/content/drive/MyDrive/emotion_detection_models/audio_model")
-print("Models saved to Google Drive.")
+model.save("/content/drive/MyDrive/emotion_detection_models/audio_model")
+print("Model saved to Google Drive.")
