@@ -70,71 +70,112 @@ class DatasetHandler:
             temp_file_path = temp_file.name
         
         print("Extracting files...")
-        print(f"Extracting to {self.data_dir}")
+        print(f"Extracting to audio directory directly: {self.audio_dir}")
         
-        # Extract the dataset
+        # Track extraction success
+        extraction_successful = False
+        
+        # Try direct extraction to audio directory first (new method)
         try:
+            # Extract WAV files directly to audio directory
             with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
-                zip_ref.extractall(self.data_dir)
-                print(f"Extraction completed")
+                # Get all entries
+                entries = zip_ref.namelist()
+                print(f"ZIP contains {len(entries)} entries")
+                
+                # Get only WAV files
+                audio_entries = [e for e in entries if e.endswith('.wav')]
+                print(f"Found {len(audio_entries)} WAV files in ZIP")
+                
+                # Extract all WAV files directly to the audio directory
+                for entry in tqdm(audio_entries, desc="Extracting audio files"):
+                    try:
+                        # Get just the filename without path
+                        filename = os.path.basename(entry)
+                        
+                        # Extract to audio directory
+                        source = zip_ref.open(entry)
+                        target_path = os.path.join(self.audio_dir, filename)
+                        
+                        with open(target_path, 'wb') as target:
+                            shutil.copyfileobj(source, target)
+                            
+                    except Exception as e:
+                        print(f"Error extracting {entry}: {str(e)}")
+                
+                # Check if we extracted files successfully
+                extracted_files = os.listdir(self.audio_dir)
+                wav_files = [f for f in extracted_files if f.endswith('.wav')]
+                print(f"Extracted {len(wav_files)} WAV files to audio directory")
+                
+                if len(wav_files) > 0:
+                    extraction_successful = True
+                    print("Direct extraction method successful")
         except Exception as e:
-            print(f"Error during extraction: {str(e)}")
-            os.unlink(temp_file_path)
-            return
+            print(f"Error during direct extraction: {str(e)}")
+            print("Falling back to traditional extraction method...")
         
-        # Move audio files to audio directory
-        extracted_path = os.path.join(self.data_dir, 'Audio_Speech_Actors_01-24')
-        print(f"Looking for extracted files in: {extracted_path}")
-        print(f"Extracted path exists: {os.path.exists(extracted_path)}")
-        
-        if os.path.exists(extracted_path):
-            actor_dirs = os.listdir(extracted_path)
-            print(f"Found {len(actor_dirs)} actor directories")
-            
-            audio_files_count = 0
-            for actor_dir in actor_dirs:
-                actor_path = os.path.join(extracted_path, actor_dir)
-                if os.path.isdir(actor_path):
-                    files = os.listdir(actor_path)
-                    audio_files = [f for f in files if f.endswith('.wav')]
-                    audio_files_count += len(audio_files)
-                    
-                    print(f"Actor {actor_dir}: {len(audio_files)} audio files")
-                    
-                    for audio_file in audio_files:
-                        # Copy instead of move to prevent issues
-                        src = os.path.join(actor_path, audio_file)
-                        dst = os.path.join(self.audio_dir, audio_file)
-                        try:
-                            shutil.copy2(src, dst)
-                        except Exception as e:
-                            print(f"Error copying {src} to {dst}: {str(e)}")
-            
-            print(f"Total of {audio_files_count} audio files found in extracted directories")
-            
-            # Verify files were copied
-            copied_files = os.listdir(self.audio_dir)
-            print(f"Audio directory now contains {len(copied_files)} files")
-            
+        # If direct extraction failed, try traditional method
+        if not extraction_successful:
             try:
-                # Clean up extraction directory
-                shutil.rmtree(extracted_path)
-                print("Cleaned up extraction directory")
+                print("Trying traditional extraction method...")
+                # Extract to data directory first
+                with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
+                    zip_ref.extractall(self.data_dir)
+                
+                # Move audio files from Actor directories to audio directory
+                extracted_path = os.path.join(self.data_dir, 'Audio_Speech_Actors_01-24')
+                if os.path.exists(extracted_path):
+                    actor_dirs = os.listdir(extracted_path)
+                    print(f"Found {len(actor_dirs)} actor directories")
+                    
+                    audio_files_count = 0
+                    for actor_dir in actor_dirs:
+                        actor_path = os.path.join(extracted_path, actor_dir)
+                        if os.path.isdir(actor_path):
+                            for audio_file in os.listdir(actor_path):
+                                if audio_file.endswith('.wav'):
+                                    src = os.path.join(actor_path, audio_file)
+                                    dst = os.path.join(self.audio_dir, audio_file)
+                                    shutil.copy2(src, dst)
+                                    audio_files_count += 1
+                    
+                    print(f"Copied {audio_files_count} audio files to audio directory")
+                    
+                    # Check if extraction was successful
+                    if audio_files_count > 0:
+                        extraction_successful = True
+                        print("Traditional extraction method successful")
+                        
+                        # Clean up extraction directory
+                        try:
+                            shutil.rmtree(extracted_path)
+                            print("Cleaned up extraction directory")
+                        except Exception as e:
+                            print(f"Warning: Could not clean up extraction directory: {str(e)}")
+                else:
+                    print(f"ERROR: Extracted directory {extracted_path} not found after extraction")
             except Exception as e:
-                print(f"Warning: Could not clean up extraction directory: {str(e)}")
-        else:
-            print(f"ERROR: Extracted directory not found after extraction")
+                print(f"Error during traditional extraction: {str(e)}")
         
-        # Clean up temporary file
+        # Clean up temporary zip file
         try:
             os.unlink(temp_file_path)
         except Exception as e:
             print(f"Warning: Could not delete temporary file: {str(e)}")
         
-        # Create metadata
-        self._create_metadata()
-        
-        print("Dataset downloaded and extracted successfully.")
+        # Check if extraction was successful
+        if extraction_successful:
+            # Create metadata
+            self._create_metadata()
+            print("Dataset downloaded and extracted successfully.")
+        else:
+            print("ERROR: Failed to extract audio files from ZIP.")
+            # Create an empty metadata file to prevent repeated download attempts
+            empty_df = pd.DataFrame(columns=[
+                'filename', 'path', 'emotion', 'intensity', 'actor', 'gender'
+            ])
+            empty_df.to_csv(self.metadata_path, index=False)
     
     def _create_metadata(self):
         """
