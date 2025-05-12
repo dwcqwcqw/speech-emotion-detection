@@ -12,10 +12,18 @@ import json
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 修改导入方式，使用相对导入
+# Modified imports to use the simple speech-to-text
 from utils.dataset_handler import DatasetHandler
 from utils.audio_processor import AudioProcessor
-from utils.speech_to_text import SpeechToText
+try:
+    # Try to import the transformer-based speech-to-text
+    from utils.speech_to_text import SpeechToText
+    print("Using transformer-based speech-to-text")
+except ImportError:
+    # Fall back to the simple speech-to-text
+    from utils.speech_to_text_simple import SimpleSpeechToText as SpeechToText
+    print("Using simplified speech-to-text (mock transcriptions)")
+
 from utils.text_analyzer import TextAnalyzer
 from utils.emotion_classifier import EmotionClassifier
 
