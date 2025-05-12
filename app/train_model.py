@@ -34,6 +34,30 @@ def main():
     train_df, val_df, test_df = dataset_handler.split_dataset()
     print(f"Dataset split: {len(train_df)} training, {len(val_df)} validation, {len(test_df)} test samples")
     
+    # Check if dataset is empty
+    if len(train_df) == 0:
+        print("ERROR: No training data available. Please check the dataset.")
+        print("This could be due to:")
+        print("1. Failed download or extraction of the dataset")
+        print("2. Issues with the metadata file creation")
+        print("3. Problems with the audio directory structure")
+        print("\nTrying to verify dataset directories...")
+        
+        # Debug information
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        audio_dir = os.path.join(data_dir, 'audio')
+        
+        print(f"Data directory exists: {os.path.exists(data_dir)}")
+        print(f"Audio directory exists: {os.path.exists(audio_dir)}")
+        
+        if os.path.exists(audio_dir):
+            files = os.listdir(audio_dir)
+            print(f"Audio directory contains {len(files)} files")
+            if len(files) > 0:
+                print(f"Sample files: {files[:5]}")
+        
+        return  # Exit the function as we can't proceed without data
+    
     # Initialize processors
     audio_processor = AudioProcessor()
     speech_to_text = SpeechToText()
@@ -64,6 +88,11 @@ def main():
         except Exception as e:
             print(f"Error processing {row['filename']}: {str(e)}")
     
+    # Check if we have enough training data after processing
+    if len(train_audio_features) == 0:
+        print("ERROR: No valid training samples could be processed.")
+        return
+    
     # Train the model
     print("Training model...")
     accuracy = emotion_classifier.train(
@@ -73,6 +102,14 @@ def main():
     )
     
     print(f"Training accuracy: {accuracy:.4f}")
+    
+    # Check if validation set is empty
+    if len(val_df) == 0:
+        print("WARNING: No validation data available. Skipping validation.")
+        model_path = 'data/models/emotion_classifier.pkl'
+        emotion_classifier.save_model(model_path)
+        print(f"Model saved to {model_path}")
+        return
     
     # Evaluate on validation set
     print("Evaluating on validation set...")
@@ -97,6 +134,14 @@ def main():
             val_labels.append(row['emotion'])
         except Exception as e:
             print(f"Error processing {row['filename']}: {str(e)}")
+    
+    # Check if we have enough validation data after processing
+    if len(val_audio_features) == 0:
+        print("WARNING: No valid validation samples could be processed.")
+        model_path = 'data/models/emotion_classifier.pkl'
+        emotion_classifier.save_model(model_path)
+        print(f"Model saved to {model_path}")
+        return
     
     # Evaluate on validation set
     val_metrics = emotion_classifier.evaluate(

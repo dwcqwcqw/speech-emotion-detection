@@ -41,7 +41,8 @@ class DatasetHandler:
         """
         Download and extract the RAVDESS dataset.
         """
-        if os.path.exists(self.metadata_path) and len(os.listdir(self.audio_dir)) > 0:
+        # Check if we need to download
+        if os.path.exists(self.metadata_path) and os.path.getsize(self.metadata_path) > 0 and len(os.listdir(self.audio_dir)) > 0:
             print("Dataset already downloaded and extracted.")
             return
         
@@ -74,10 +75,13 @@ class DatasetHandler:
                 if os.path.isdir(actor_path):
                     for audio_file in os.listdir(actor_path):
                         if audio_file.endswith('.wav'):
-                            shutil.move(
-                                os.path.join(actor_path, audio_file),
-                                os.path.join(self.audio_dir, audio_file)
-                            )
+                            # Ensure we don't error if file already exists
+                            dest_path = os.path.join(self.audio_dir, audio_file)
+                            if not os.path.exists(dest_path):
+                                shutil.move(
+                                    os.path.join(actor_path, audio_file),
+                                    dest_path
+                                )
             
             # Clean up extraction directory
             shutil.rmtree(extracted_path)
@@ -119,17 +123,44 @@ class DatasetHandler:
                         })
         
         # Create metadata dataframe and save to CSV
-        metadata_df = pd.DataFrame(metadata)
-        metadata_df.to_csv(self.metadata_path, index=False)
+        if metadata:  # Only save if we have data
+            metadata_df = pd.DataFrame(metadata)
+            metadata_df.to_csv(self.metadata_path, index=False)
+            print(f"Created metadata file with {len(metadata)} entries")
+        else:
+            print("Warning: No audio files found to create metadata")
     
     def load_metadata(self):
         """
         Load the metadata dataframe.
         """
-        if not os.path.exists(self.metadata_path):
+        if not os.path.exists(self.metadata_path) or os.path.getsize(self.metadata_path) == 0:
+            print("Metadata file doesn't exist or is empty, creating it now...")
             self._create_metadata()
+            
+            # If still empty, we have a problem with the dataset
+            if not os.path.exists(self.metadata_path) or os.path.getsize(self.metadata_path) == 0:
+                # Create a sample dataframe with expected columns but no data
+                # This prevents the EmptyDataError but will still show the user that no data was found
+                print("Warning: Could not create valid metadata. Creating empty dataframe with expected columns.")
+                empty_df = pd.DataFrame(columns=[
+                    'filename', 'path', 'emotion', 'intensity', 'actor', 'gender'
+                ])
+                empty_df.to_csv(self.metadata_path, index=False)
         
-        return pd.read_csv(self.metadata_path)
+        # Print debug info
+        print(f"Loading metadata from {self.metadata_path}")
+        print(f"Metadata file exists: {os.path.exists(self.metadata_path)}")
+        print(f"Metadata file size: {os.path.getsize(self.metadata_path) if os.path.exists(self.metadata_path) else 0} bytes")
+        
+        try:
+            return pd.read_csv(self.metadata_path)
+        except pd.errors.EmptyDataError:
+            print("Error: Metadata file exists but is empty or improperly formatted")
+            # Return an empty DataFrame with the expected columns
+            return pd.DataFrame(columns=[
+                'filename', 'path', 'emotion', 'intensity', 'actor', 'gender'
+            ])
     
     def split_dataset(self, test_size=0.2, val_size=0.1, random_state=42):
         """
@@ -141,14 +172,22 @@ class DatasetHandler:
         # Load metadata
         metadata_df = self.load_metadata()
         
+        # Check if we have data
+        if len(metadata_df) == 0:
+            print("Warning: No data found in metadata. Returning empty dataframes.")
+            empty_df = pd.DataFrame(columns=[
+                'filename', 'path', 'emotion', 'intensity', 'actor', 'gender'
+            ])
+            return empty_df, empty_df, empty_df
+        
         # Get unique actors for speaker-independent split
         actors = metadata_df['actor'].unique()
         random.Random(random_state).shuffle(actors)
         
         # Split actors into train, val, and test
         n_actors = len(actors)
-        n_test = int(n_actors * test_size)
-        n_val = int(n_actors * val_size)
+        n_test = max(1, int(n_actors * test_size))
+        n_val = max(1, int(n_actors * val_size))
         n_train = n_actors - n_test - n_val
         
         train_actors = actors[:n_train]
