@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal Emotion Detection</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        header {
+            background-color: #6200ee;
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .tagline {
+            font-style: italic;
+            margin-top: 10px;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+        .feature {
+            flex: 1;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .feature h2 {
+            color: #6200ee;
+            margin-top: 0;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #6200ee;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+        .cta-button:hover {
+            background-color: #3700b3;
+        }
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #666;
+            padding: 20px;
+            border-top: 1px solid #ddd;
+        }
+        .emotion-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .centered {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Multimodal Emotion Detection</h1>
+        <p class="tagline">Analyzing both how things are said and what is said</p>
+    </header>
+
+    <section>
+        <h2>About the Project</h2>
+        <p>
+            This project combines speech prosody analysis with automatic speech recognition (ASR) to detect human emotions 
+            with improved accuracy. By analyzing both acoustic features and the content of what is said, the system can 
+            identify emotional states such as happiness, anger, sadness, anxiety, and neutral expressions.
+        </p>
+    </section>
+
+    <section class="container">
+        <div class="feature">
+            <div class="emotion-icon">🔊</div>
+            <h2>Audio Analysis</h2>
+            <p>
+                Extracts acoustic features like pitch, intensity, tempo, and spectral characteristics to identify 
+                emotional patterns in how you speak.
+            </p>
+        </div>
+        <div class="feature">
+            <div class="emotion-icon">📝</div>
+            <h2>Speech Recognition</h2>
+            <p>
+                Uses advanced ASR to accurately transcribe speech to text, capturing what is being said regardless of
+                accent or background noise.
+            </p>
+        </div>
+        <div class="feature">
+            <div class="emotion-icon">🧠</div>
+            <h2>Text Analysis</h2>
+            <p>
+                Analyzes linguistic content, word choice, and sentiment to detect emotional cues in what you say.
+            </p>
+        </div>
+    </section>
+    
+    <section class="container">
+        <div class="feature">
+            <div class="emotion-icon">🔄</div>
+            <h2>Multimodal Fusion</h2>
+            <p>
+                Combines both audio and text features for more accurate emotion detection than either modality alone.
+            </p>
+        </div>
+        <div class="feature">
+            <div class="emotion-icon">📊</div>
+            <h2>Real-time Analysis</h2>
+            <p>
+                Get instant feedback on emotional content in speech, with detailed breakdowns of contributing factors.
+            </p>
+        </div>
+        <div class="feature">
+            <div class="emotion-icon">🎯</div>
+            <h2>Scientific Approach</h2>
+            <p>
+                Built using the open-source RAVDESS dataset and trained with state-of-the-art machine learning techniques.
+            </p>
+        </div>
+    </section>
+
+    <section class="centered">
+        <h2>Try It Yourself</h2>
+        <p>
+            Ready to experience multimodal emotion detection? Launch the interactive web app and analyze your own speech.
+        </p>
+        <a href="/app" class="cta-button">Launch Web App</a>
+    </section>
+
+    <footer>
+        <p>© 2023 Multimodal Emotion Detection Project | Open Source | MIT License</p>
+    </footer>
+</body>
+</html> 
