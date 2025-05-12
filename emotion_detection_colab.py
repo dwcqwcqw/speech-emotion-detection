@@ -9,7 +9,11 @@
 # %%
 # Clone the repository
 !git clone https://github.com/dwcqwcqw/speech-emotion-detection.git
-!cd speech-emotion-detection
+
+# Change working directory to the cloned repo
+import os
+os.chdir('speech-emotion-detection')
+!pwd
 
 # Install dependencies
 !pip install -q numpy pandas scikit-learn matplotlib tensorflow librosa transformers soundfile
@@ -29,7 +33,8 @@
 
 # %%
 import sys
-sys.path.append("/content/speech-emotion-detection")
+# Add the current directory to path
+sys.path.append(os.getcwd())
 
 from src.audio_features import AudioFeatureExtractor
 from src.data_processor import DataProcessor
@@ -47,7 +52,7 @@ import matplotlib.pyplot as plt
 
 # %%
 # Load and show configuration
-config = load_config("/content/speech-emotion-detection/config.yaml")
+config = load_config("config.yaml")
 print(config)
 
 # %% [markdown]
@@ -113,7 +118,7 @@ analyzer = MultimodalAnalyzer(audio_model, text_model, config)
 
 # %%
 # Test with sample audio
-audio_path = "/content/speech-emotion-detection/data/ravdess/Actor_01/03-01-01-01-01-01-01.wav"
+audio_path = "data/ravdess/Actor_01/03-01-01-01-01-01-01.wav"
 text = "I'm feeling quite happy today."
 
 # Extract audio features
