@@ -15,6 +15,16 @@ def main():
     
     print("Fixing import issues for Google Colab...")
     
+    # Create necessary directories
+    os.makedirs("data", exist_ok=True)
+    os.makedirs("data/audio", exist_ok=True)
+    os.makedirs("data/models", exist_ok=True)
+    
+    print(f"Created directory structure in {project_root}")
+    print(f"- data/ (exists: {os.path.exists('data')})")
+    print(f"- data/audio/ (exists: {os.path.exists('data/audio')})")
+    print(f"- data/models/ (exists: {os.path.exists('data/models')})")
+    
     # First, ensure that all necessary files exist
     if not os.path.exists("app/utils/speech_to_text_simple.py"):
         print("Error: speech_to_text_simple.py not found. Creating it...")
@@ -109,6 +119,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import shutil
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -125,9 +136,34 @@ from app.utils.emotion_classifier import EmotionClassifier
 def main():
     print("Initializing emotion detection model training...")
     
+    # Debug - show current working directory
+    print(f"Current working directory: {os.getcwd()}")
+    
+    # Ensure we have proper paths for Colab
+    # If we're running in Colab, data_dir should be absolute path
+    is_colab = 'google.colab' in sys.modules
+    
+    if is_colab:
+        # In Colab, use a path relative to the project root
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(project_root, 'data')
+        print(f"Running in Colab, using data directory: {data_dir}")
+    else:
+        # Local development
+        data_dir = 'data'
+    
     # Create dataset handler and download dataset
-    dataset_handler = DatasetHandler()
+    dataset_handler = DatasetHandler(data_dir=data_dir)
     dataset_handler.download_ravdess()
+    
+    # Debug - show audio directory contents after download
+    audio_dir = os.path.join(data_dir, 'audio')
+    print(f"Audio directory exists after download: {os.path.exists(audio_dir)}")
+    if os.path.exists(audio_dir):
+        files = os.listdir(audio_dir)
+        print(f"Audio directory contains {len(files)} files after download")
+        if len(files) > 0:
+            print(f"Sample files: {files[:5]}")
     
     # Split dataset
     train_df, val_df, test_df = dataset_handler.split_dataset()
@@ -143,7 +179,13 @@ def main():
         print("\\nTrying to verify dataset directories...")
         
         # Debug information
-        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        if is_colab:
+            # In Colab, we already have the project_root defined
+            print(f"Project root: {project_root}")
+            print(f"Project files: {os.listdir(project_root)}")
+        else:
+            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        
         audio_dir = os.path.join(data_dir, 'audio')
         
         print(f"Data directory exists: {os.path.exists(data_dir)}")
@@ -154,8 +196,45 @@ def main():
             print(f"Audio directory contains {len(files)} files")
             if len(files) > 0:
                 print(f"Sample files: {files[:5]}")
-        
-        return  # Exit the function as we can't proceed without data
+                
+        # Check extraction directory (which might still exist if cleanup failed)
+        extracted_path = os.path.join(data_dir, 'Audio_Speech_Actors_01-24')
+        if os.path.exists(extracted_path):
+            print(f"Extracted directory still exists: {extracted_path}")
+            print(f"It contains: {os.listdir(extracted_path)}")
+            
+            # Try to manually move files if needed
+            try:
+                print("Attempting to manually move files...")
+                moved_count = 0
+                for actor_dir in os.listdir(extracted_path):
+                    actor_path = os.path.join(extracted_path, actor_dir)
+                    if os.path.isdir(actor_path):
+                        for audio_file in os.listdir(actor_path):
+                            if audio_file.endswith('.wav'):
+                                src = os.path.join(actor_path, audio_file)
+                                dst = os.path.join(audio_dir, audio_file)
+                                if not os.path.exists(dst):
+                                    shutil.copy(src, dst)
+                                    moved_count += 1
+                print(f"Manually moved {moved_count} files")
+                
+                if moved_count > 0:
+                    # Try to regenerate metadata
+                    print("Regenerating metadata...")
+                    dataset_handler._create_metadata()
+                    # Try again to load the dataset
+                    train_df, val_df, test_df = dataset_handler.split_dataset()
+                    if len(train_df) > 0:
+                        print(f"Successfully recovered! Dataset split: {len(train_df)} training, {len(val_df)} validation, {len(test_df)} test samples")
+                    else:
+                        print("Failed to recover dataset despite finding audio files.")
+                        return
+            except Exception as e:
+                print(f"Error during recovery attempt: {str(e)}")
+                return
+        else:
+            return  # Exit the function as we can't proceed without data
     
     # Initialize processors
     audio_processor = AudioProcessor()
@@ -205,7 +284,8 @@ def main():
     # Check if validation set is empty
     if len(val_df) == 0:
         print("WARNING: No validation data available. Skipping validation.")
-        model_path = 'data/models/emotion_classifier.pkl'
+        model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
         emotion_classifier.save_model(model_path)
         print(f"Model saved to {model_path}")
         return
@@ -237,7 +317,8 @@ def main():
     # Check if we have enough validation data after processing
     if len(val_audio_features) == 0:
         print("WARNING: No valid validation samples could be processed.")
-        model_path = 'data/models/emotion_classifier.pkl'
+        model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
         emotion_classifier.save_model(model_path)
         print(f"Model saved to {model_path}")
         return
@@ -259,7 +340,8 @@ def main():
         print(f"    F1: {metrics['f1']:.4f}")
     
     # Save the model
-    model_path = 'data/models/emotion_classifier.pkl'
+    model_path = os.path.join(data_dir, 'models', 'emotion_classifier.pkl')
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     emotion_classifier.save_model(model_path)
     print(f"Model saved to {model_path}")"""
 
@@ -268,9 +350,6 @@ def main():
         f.write(train_model_content)
     print("Updated app/train_model.py with fixed syntax")
 
-    # Similarly for app.py and evaluate_model.py, write complete files instead of replacements
-    # For brevity, we'll skip those files for now since they follow the same pattern
-    
     # The rest of the script remains unchanged
     print("Now creating run scripts for Colab...")
     
@@ -284,6 +363,17 @@ import sys
 # Add absolute path to the project
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
+
+# Create necessary directories
+os.makedirs(os.path.join(project_root, "data"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "audio"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "models"), exist_ok=True)
+
+# Debug info
+print(f"Project root: {project_root}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Python path: {sys.path}")
+print(f"Data directories created.")
 
 # Import main function directly
 from app.train_model import main
@@ -303,6 +393,15 @@ import sys
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
+# Create necessary directories
+os.makedirs(os.path.join(project_root, "data"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "audio"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "models"), exist_ok=True)
+
+# Debug info
+print(f"Project root: {project_root}")
+print(f"Working directory: {os.getcwd()}")
+
 # Import main function directly
 from app.evaluate_model import main
 
@@ -321,6 +420,15 @@ import subprocess
 # Add absolute path to the project
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
+
+# Create necessary directories
+os.makedirs(os.path.join(project_root, "data"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "audio"), exist_ok=True)
+os.makedirs(os.path.join(project_root, "data", "models"), exist_ok=True)
+
+# Debug info
+print(f"Project root: {project_root}")
+print(f"Working directory: {os.getcwd()}")
 
 if __name__ == "__main__":
     # Run Streamlit app

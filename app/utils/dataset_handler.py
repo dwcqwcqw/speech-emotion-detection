@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import random
+import sys
 
 class DatasetHandler:
     """
@@ -36,6 +37,13 @@ class DatasetHandler:
             '07': 'neutral',  # "disgust" mapped to neutral
             '08': 'neutral'   # "surprised" mapped to neutral
         }
+        
+        # Debug information
+        is_colab = 'google.colab' in sys.modules
+        if is_colab:
+            print(f"Running in Colab environment")
+            print(f"Data directory: {self.data_dir} (exists: {os.path.exists(self.data_dir)})")
+            print(f"Audio directory: {self.audio_dir} (exists: {os.path.exists(self.audio_dir)})")
     
     def download_ravdess(self):
         """
@@ -62,32 +70,66 @@ class DatasetHandler:
             temp_file_path = temp_file.name
         
         print("Extracting files...")
+        print(f"Extracting to {self.data_dir}")
         
         # Extract the dataset
-        with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
-            zip_ref.extractall(self.data_dir)
+        try:
+            with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
+                zip_ref.extractall(self.data_dir)
+                print(f"Extraction completed")
+        except Exception as e:
+            print(f"Error during extraction: {str(e)}")
+            os.unlink(temp_file_path)
+            return
         
         # Move audio files to audio directory
         extracted_path = os.path.join(self.data_dir, 'Audio_Speech_Actors_01-24')
+        print(f"Looking for extracted files in: {extracted_path}")
+        print(f"Extracted path exists: {os.path.exists(extracted_path)}")
+        
         if os.path.exists(extracted_path):
-            for actor_dir in os.listdir(extracted_path):
+            actor_dirs = os.listdir(extracted_path)
+            print(f"Found {len(actor_dirs)} actor directories")
+            
+            audio_files_count = 0
+            for actor_dir in actor_dirs:
                 actor_path = os.path.join(extracted_path, actor_dir)
                 if os.path.isdir(actor_path):
-                    for audio_file in os.listdir(actor_path):
-                        if audio_file.endswith('.wav'):
-                            # Ensure we don't error if file already exists
-                            dest_path = os.path.join(self.audio_dir, audio_file)
-                            if not os.path.exists(dest_path):
-                                shutil.move(
-                                    os.path.join(actor_path, audio_file),
-                                    dest_path
-                                )
+                    files = os.listdir(actor_path)
+                    audio_files = [f for f in files if f.endswith('.wav')]
+                    audio_files_count += len(audio_files)
+                    
+                    print(f"Actor {actor_dir}: {len(audio_files)} audio files")
+                    
+                    for audio_file in audio_files:
+                        # Copy instead of move to prevent issues
+                        src = os.path.join(actor_path, audio_file)
+                        dst = os.path.join(self.audio_dir, audio_file)
+                        try:
+                            shutil.copy2(src, dst)
+                        except Exception as e:
+                            print(f"Error copying {src} to {dst}: {str(e)}")
             
-            # Clean up extraction directory
-            shutil.rmtree(extracted_path)
+            print(f"Total of {audio_files_count} audio files found in extracted directories")
+            
+            # Verify files were copied
+            copied_files = os.listdir(self.audio_dir)
+            print(f"Audio directory now contains {len(copied_files)} files")
+            
+            try:
+                # Clean up extraction directory
+                shutil.rmtree(extracted_path)
+                print("Cleaned up extraction directory")
+            except Exception as e:
+                print(f"Warning: Could not clean up extraction directory: {str(e)}")
+        else:
+            print(f"ERROR: Extracted directory not found after extraction")
         
         # Clean up temporary file
-        os.unlink(temp_file_path)
+        try:
+            os.unlink(temp_file_path)
+        except Exception as e:
+            print(f"Warning: Could not delete temporary file: {str(e)}")
         
         # Create metadata
         self._create_metadata()
@@ -101,8 +143,20 @@ class DatasetHandler:
         """
         metadata = []
         
-        for filename in os.listdir(self.audio_dir):
-            if filename.endswith('.wav'):
+        print(f"Creating metadata from audio files in {self.audio_dir}")
+        
+        if not os.path.exists(self.audio_dir):
+            print(f"ERROR: Audio directory {self.audio_dir} does not exist")
+            return
+        
+        files = os.listdir(self.audio_dir)
+        print(f"Found {len(files)} files in audio directory")
+        
+        wav_files = [f for f in files if f.endswith('.wav')]
+        print(f"Found {len(wav_files)} WAV files")
+        
+        for filename in wav_files:
+            try:
                 parts = filename.split('-')
                 if len(parts) >= 7:
                     emotion_code = parts[2]
@@ -121,6 +175,8 @@ class DatasetHandler:
                             'actor': actor,
                             'gender': gender
                         })
+            except Exception as e:
+                print(f"Error processing file {filename}: {str(e)}")
         
         # Create metadata dataframe and save to CSV
         if metadata:  # Only save if we have data
@@ -154,7 +210,15 @@ class DatasetHandler:
         print(f"Metadata file size: {os.path.getsize(self.metadata_path) if os.path.exists(self.metadata_path) else 0} bytes")
         
         try:
-            return pd.read_csv(self.metadata_path)
+            df = pd.read_csv(self.metadata_path)
+            
+            # Update paths if needed (for compatibility between environments)
+            if 'path' in df.columns and len(df) > 0:
+                # Ensure paths point to the correct location
+                df['path'] = df['filename'].apply(lambda x: os.path.join(self.audio_dir, x))
+                print(f"Updated paths in metadata to use audio directory: {self.audio_dir}")
+            
+            return df
         except pd.errors.EmptyDataError:
             print("Error: Metadata file exists but is empty or improperly formatted")
             # Return an empty DataFrame with the expected columns
